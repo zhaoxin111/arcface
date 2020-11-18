@@ -15,6 +15,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <pthread.h>
 #include <unistd.h>
+#include <map>
 
 using namespace cv;
 using namespace std;
@@ -29,7 +30,7 @@ using namespace std;
 
 #define SafeFree(p) { if ((p)) free(p); (p) = NULL; }
 #define SafeArrayDelete(p) { if ((p)) delete [] (p); (p) = NULL; } 
-#define SafeDelete(p) { if ((p)) delete (p); (p) = NULL; } 
+#define SafeDelete(p) { if ((p)) delete (p); (p) = NULL; }
 
 struct RESULT
 {
@@ -47,6 +48,10 @@ struct RESULT
 	int genderInfo = -1;
 	ASF_Face3DAngle angleInfo = { 0 };
 };
+
+// 存储所有id下找到的正脸数据
+map<string,RESULT*> standard_faces;
+
 
 //图像颜色格式转换
 int ColorSpaceConversion(MInt32 width, MInt32 height, MInt32 format, MUInt8* imgData, ASVLOFFSCREEN& offscreen)
@@ -365,7 +370,8 @@ float person2person_score(cv::String subject1,cv::String subject2,MHandle handle
 	// find valid faces
 	for (int i=0;i<num_imgs1;i++)
 	{
-		if (valid_num1>=MAX_VALID) break;
+		if (standard_faces.count(subject1)) break;
+		// if (valid_num1>=MAX_VALID) break;
 		cv::String img1_path = imgs1[i];
 		RESULT *result1=new RESULT;
 		detecFace(img1_path, handle, res, PAD,result1);
@@ -376,15 +382,17 @@ float person2person_score(cv::String subject1,cv::String subject2,MHandle handle
 		if((roll<=12)&&(yaw<=15)&&(pitch<=18))
 		{
 			RESULT* res=copyfeature(result1);
-			valid_results1.push_back(res);
-			valid_paths1.push_back(imgs1[i]);
-			valid_num1++;
+			// valid_results1.push_back(res);
+			// valid_paths1.push_back(imgs1[i]);
+			// valid_num1++;
+			standard_faces.insert(std::pair<string,RESULT*>(subject1, res));
 		}
 		
 	}
 	for (int i=0;i<num_imgs2;i++)
 	{
-		if (valid_num2>=MAX_VALID) break;
+		if (standard_faces.count(subject2)) break;
+		// if (valid_num2>=MAX_VALID) break;
 		cv::String img2_path = imgs2[i];
 		RESULT *result2=new RESULT;
 		detecFace(img2_path, handle, res, PAD,result2);
@@ -395,51 +403,58 @@ float person2person_score(cv::String subject1,cv::String subject2,MHandle handle
 		if((roll<=12)&&(yaw<=15)&&(pitch<=18))
 		{
 			RESULT* res=copyfeature(result2);
-			valid_results2.push_back(res);
-			valid_paths2.push_back(imgs2[i]);
-			valid_num2++;
+			// valid_results2.push_back(res);
+			// valid_paths2.push_back(imgs2[i]);
+			// valid_num2++;
+			standard_faces.insert(std::pair<string,RESULT*>(subject2, res));
 		}
 		
 	}
-	if (valid_paths1.empty()||valid_paths2.empty()) return mean_socre;
+	// if (valid_paths1.empty()||valid_paths2.empty()) return mean_socre;
+	if (!(standard_faces.count(subject1)&&standard_faces.count(subject2))) return mean_socre;
 	
-	std::set<float> scores_set;
-	std::vector<float> scores_vec;
+	MFloat confidenceLevel=-1;
+	res = ASFFaceFeatureCompare(handle, &standard_faces[subject1]->feature, &standard_faces[subject2]->feature, &confidenceLevel);
+	if (res == MOK) return confidenceLevel;
+	else return mean_socre;
 
-	srand((unsigned)time(NULL));
-	for (int i=0;i<MAX_TRY;i++)
-	{
-		if (valid_num_compare>=VALID_TRY) break;
-		int idx1 = (rand()%valid_num1),idx2 = (rand()%valid_num2);
-		cv::String img1_path = valid_paths1[idx1],img2_path=valid_paths2[idx2];
-		MFloat confidenceLevel=-1;
-		res = ASFFaceFeatureCompare(handle, &valid_results1[idx1]->feature, &valid_results2[idx2]->feature, &confidenceLevel);
-		// if (res != MOK)
-			// printf("ASFFaceFeatureCompare fail: %d\n", res);
+	// std::set<float> scores_set;
+	// std::vector<float> scores_vec;
+
+	// srand((unsigned)time(NULL));
+	// for (int i=0;i<MAX_TRY;i++)
+	// {
+	// 	if (valid_num_compare>=VALID_TRY) break;
+	// 	int idx1 = (rand()%valid_num1),idx2 = (rand()%valid_num2);
+	// 	cv::String img1_path = valid_paths1[idx1],img2_path=valid_paths2[idx2];
+	// 	MFloat confidenceLevel=-1;
+	// 	res = ASFFaceFeatureCompare(handle, &valid_results1[idx1]->feature, &valid_results2[idx2]->feature, &confidenceLevel);
+	// 	// if (res != MOK)
+	// 		// printf("ASFFaceFeatureCompare fail: %d\n", res);
 			
-		if (res == MOK)
-		{
-			if (scores_set.count(confidenceLevel)==0)
-			{
-				scores_set.insert(confidenceLevel);
-				valid_num_compare++;
-			}
-		}		
-	}
-	if (scores_set.empty()) return mean_socre;
-	scores_vec.assign(scores_set.begin(),scores_set.end());
+	// 	if (res == MOK)
+	// 	{
+	// 		if (scores_set.count(confidenceLevel)==0)
+	// 		{
+	// 			scores_set.insert(confidenceLevel);
+	// 			valid_num_compare++;
+	// 		}
+	// 	}		
+	// }
+	// if (scores_set.empty()) return mean_socre;
+	// scores_vec.assign(scores_set.begin(),scores_set.end());
 	
-	// if (scores_vec.size()<=2) return mean_socre;
-	// sort(scores_vec.begin(),scores_vec.end());
-	float sum=0;
-	for (int i=0;i<scores_vec.size();i++)
-	{
-		// cout<<scores_vec[i]<<" ";
-		sum+=scores_vec[i];
-	}
-	mean_socre = sum/(scores_vec.size());
+	// // if (scores_vec.size()<=2) return mean_socre;
+	// // sort(scores_vec.begin(),scores_vec.end());
+	// float sum=0;
+	// for (int i=0;i<scores_vec.size();i++)
+	// {
+	// 	// cout<<scores_vec[i]<<" ";
+	// 	sum+=scores_vec[i];
+	// }
+	// mean_socre = sum/(scores_vec.size());
 	// cout<<endl<<mean_socre<<endl;
-	return mean_socre;
+	// return mean_socre;
 }
 
 vector<string> split(string str, string delim) {
@@ -471,7 +486,6 @@ public:
 	float max_model_score=0;
 };
 
-
 void *process(void *param)
 {
 	thread_data *data=(thread_data *)param;
@@ -495,22 +509,23 @@ void *process(void *param)
 
 	int num_lines = data->end-data->start;
 	// cout<<num_lines<<" pairs"<<endl;
-
 	
-	int complet = 0,line_index=0;
+	int complet = 0,line_index=0, num_process=0,num_error=0,num_skip=0;
 	string line;
 	while (getline(img_paths,line)&&line_index<data->start)
 	{
 		line_index++;
 		/* code */
 	}
-	cout<<data->thread_id<<" index "<<line_index<<endl;
+	// cout<<data->thread_id<<" index "<<line_index<<endl;
+	printf("thread %d start from %d\n", data->thread_id,data->start);
 
 	// getline(img_paths,line);
 	// cout<<line<<endl;
 	while(getline(img_paths,line)&&complet<num_lines)
 	{
 		complet++;
+		if (complet%100==0) cout<<data->thread_id<<" "<<complet<<"/"<<num_lines<<endl;
 		line = line.substr(0,line.length());
 		// cout<<"line: "<<line<<endl;
 		// cout<<data->thread_id<<","<<line<<endl;
@@ -519,37 +534,58 @@ void *process(void *param)
 		if (parts.size()!=3)
 		{
 			cout<<"split error: "<<line<<endl;
+			num_error++;
 			sleep(1);
 			continue;
 		}
 		// 过滤model预测相似度小于阈值的id对
 		float model_score = stof(parts[2]);
-		if (model_score>THRESHOLD_MODEL_MAX||model_score<THRESHOLD_MODEL_MIN) continue;
+		if (model_score>THRESHOLD_MODEL_MAX||model_score<THRESHOLD_MODEL_MIN)
+		{
+			num_skip++;
+			continue;
+		} 
 		float score = person2person_score(parts[0],parts[1],handle,res);
 		// printf("embedding score: %s, sdk score %2.3f \n",parts[2].substr(0,4).c_str(),score);
 		line=line+" "+to_string(score);
 		outfile<<line<<endl;
-		// endTime = clock();
-		
+		num_process++;
 		// printf("thread id: %d, start %d end %d, current %d \n",data->thread_id,line_index,data->end,complet);
-		if (complet%100==0) cout<<data->thread_id<<" "<<complet<<"/"<<num_lines<<endl;
+		
 	}
-	cout<<data->thread_id<<" pthread_exit"<<endl;
+	// cout<<data->thread_id<<" thread_exit"<<endl;
+	printf("thread %d exit, process %d valid pairs, %d error, %d skiped.\n",data->thread_id,num_process,num_error,num_skip);
 	img_paths.close();
 	outfile.close();
 	pthread_exit(NULL);
 }
 
-int main(int argc, char** argv)
+// ./face_compare 26 0.6 0.8 0 80000 "/data/zhaoxin_data/renren_filtered_data_v3/features/subject2subject_score_0.45.txt" /data/zhaoxin_data/renren_filtered_data_v3/features/sdk/test_thread_
+/*
+多线程人脸比对
+1.通过arcsdk计算出的人脸3D信息找到正脸
+2.用正脸比对id
+3.加速设计：仅采用一个正脸比对；使用set保存id正脸特征避免重复找正脸计算特征
+
+注：命令行传7个参数，分别为：
+1：线程数，最好不超过26，超过的话可能arcsdk人脸信息引擎初始化失败
+2：需要sdk比对的模型预测两id相似度最低值  deprecated
+3：需要sdk比对的模型预测两id相似度最高值  deprecated
+4：起始比对行数
+5：每个线程比对行数
+6：比对的文件路径，文件内每行数据为 id1_path id2_path model_score
+7: 结果保存文件前缀
+*/
+int paral_process(char** argv)
 {
 	int NUM_THREADS=atoi(argv[1]);
 	float min_model_score=atof(argv[2]), max_model_score=atof(argv[3]);
 	int start=atoi(argv[4]),step=atoi(argv[5]);
 	char* infile = argv[6];
+	string out_prefix(argv[7]);
 
 	printf("num_threads:%d,min_score:%f,max_score:%f,start:%d,step:%d,%s\n",NUM_THREADS,min_model_score,max_model_score,start,step,infile);
-	string root_outfile = "/data/zhaoxin_data/renren_filtered_data_v3/features/sdk/test_thread_"+\
-	to_string(min_model_score)+"_"+to_string(max_model_score)+"_threadID_";
+	string root_outfile = out_prefix+to_string(min_model_score)+"_"+to_string(max_model_score)+"_threadID_";
 	pthread_t threads[NUM_THREADS];
 	thread_data td[NUM_THREADS];
 	int rc=0;
@@ -577,48 +613,24 @@ int main(int argc, char** argv)
 		}
 	}
 	pthread_exit(NULL);
-
-
-
-	// float THRESHOLD_MODEL_MIN=stof(argv[3]),THRESHOLD_MODEL_MAX=stof(argv[4]);
-	// cout<<THRESHOLD_MODEL_MIN<<THRESHOLD_MODEL_MAX<<endl;
-	// MRESULT res = MOK;
-	// MHandle handle = NULL;
-	// init(res,handle);
-
-	// string infile_path(argv[1]);
-	// string outfile_path(argv[2]);
-	// ifstream img_paths;
-	// img_paths.open(infile_path);
-	// ofstream outfile;
-	// outfile.open(outfile_path);
-
-	// int num_lines = CountLines(argv[1]),complet=0;
-	// cout<<num_lines<<" pairs"<<endl;
-
-	// clock_t startTime,endTime;
-	// startTime = clock();
-	// int num_iter = 0;
-	// string line;
-	// while(getline(img_paths,line))
-	// {
-	// 	num_iter++;
-	// 	line = line.substr(0,line.length());
-	// 	vector<string> parts = split(line," ");
-	// 	// 过滤model预测相似度小于阈值的id对
-	// 	float model_score = stof(parts[2]);
-	// 	if (model_score>THRESHOLD_MODEL_MAX||model_score<THRESHOLD_MODEL_MIN) continue;
-	// 	float score = person2person_score(parts[0],parts[1],handle,res);
-	// 	// printf("embedding score: %s, sdk score %2.3f \n",parts[2].substr(0,4).c_str(),score);
-	// 	line=line+" "+to_string(score);
-	// 	outfile<<line<<endl;
-	// 	endTime = clock();
-	// 	cout << "time : " <<(double)(endTime - startTime) / CLOCKS_PER_SEC / num_iter << "s" << endl;
-	// 	complet++;
-		
-	// 	if (complet%100==0) cout<<complet<<"/"<<num_lines<<endl;
-	// }
 	cout<<"done!"<<endl;
+	return 0;
+}
+
+void test_p2p(char** argv)
+{
+	MRESULT res = MOK;
+	MHandle handle = NULL;
+	init(res,handle);
+	string sub1(argv[1]),sub2(argv[2]);
+	float score = person2person_score(sub1,sub2,handle,res);
+	cout<<score<<endl;
+}
+
+int main(int argc, char** argv)
+{
+	// test_p2p(argv);
+	paral_process(argv);
     return 0;
 }
 
