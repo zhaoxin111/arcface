@@ -1,0 +1,3 @@
+/home/zhaoxin/workspace/face/ArcSoft_ArcFace_Linux_x64_V3.0/samplecode/ASFTestDemo/build/CMakeFiles/rebuild_cache.dir
+/home/zhaoxin/workspace/face/ArcSoft_ArcFace_Linux_x64_V3.0/samplecode/ASFTestDemo/build/CMakeFiles/edit_cache.dir
+/home/zhaoxin/workspace/face/ArcSoft_ArcFace_Linux_x64_V3.0/samplecode/ASFTestDemo/build/CMakeFiles/face_compare.dir
